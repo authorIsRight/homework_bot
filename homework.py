@@ -1,11 +1,26 @@
-...
+import logging
+import os
+from pprint import pprint
+import sys
+import time
+
+from http import HTTPStatus
+from dotenv import load_dotenv 
+
+import requests
+import telegram
+from telegram import ReplyKeyboardMarkup, Bot
+from telegram.ext import CommandHandler, Updater
 
 load_dotenv()
 
+#убрать токены перед гит пуш в .env
 
-PRACTICUM_TOKEN = ...
-TELEGRAM_TOKEN = ...
-TELEGRAM_CHAT_ID = ...
+PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+print(PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -18,21 +33,65 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
+# handlers allow to overcome problem with utf-8 
+logging.basicConfig(handlers=[logging.FileHandler(
+    'homewrok_bot.log',
+    'a+',
+    'utf-8'
+    )],
+    format='%(asctime)s - %(levelname)s - %(message)s - %(name)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+logger.addHandler(
+    logging.StreamHandler(sys.stdout)
+)
 
 def send_message(bot, message):
-    ...
-
+    try:
+        bot.send_message(
+            chat_id = TELEGRAM_CHAT_ID,
+            text = message)
+        logger.info(f'Сообщение отправленно: {message}')    
+    except telegram.TelegramError as e:
+        logger.error(f'Сообщение НЕ отправленно: {message}. {e}')
 
 def get_api_answer(current_timestamp):
+    """Запрашивает инфу по домашкам у API яндекса
+    в случае, если доступно, передает это на обработку
+    в другие функции"""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
-
-    ...
+    # удалить после тестирования строку ниже
+    params = {'from_date': 0}
+    try: 
+        homework_statuses = requests.get(
+            ENDPOINT,
+            headers=HEADERS,
+            params=params
+        )
+    except homework_statuses.status_code != HTTPStatus.OK:
+        logger.error(f'Проблема с доступом. Код: {homework_statuses.status_code}')               
+    except requests.exceptions.RequestException as e:
+        logger.error(f'Возникла ошибка, связанная с endpoint: {e}')       
+    return homework_statuses.json()
 
 
 def check_response(response):
-
-    ...
+    """Проверяет на то, что ответ API
+    соответствует ожиданиям и возвращает 
+    последнюю домащнюю работу"""
+    if 'homeworks' not in response:
+        logger.error('Unexpected return from API: key \'homeworks\' not found')
+    if not isinstance(response, dict):
+        logger.error('API did not return dictionary')
+    if not isinstance(response['homeworks'], list):
+        logger.error('API did not return list on homeworks')
+    if not isinstance(response['homeworks'][0], dict):
+        logger.error('API did not return dictionary on the last homework')
+    if len(response) == 0:
+        return {}
+    return response['homeworks'][0]
 
 
 def parse_status(homework):
@@ -49,26 +108,41 @@ def parse_status(homework):
 
 
 def check_tokens():
-    ...
+    """Проверяем, что токены подключены"""
+    empty_token_message = 'Работа программы требует наличия токенов'
+    token_ok = True  
+    tokens = (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
+    for token in tokens:
+        if token is None:
+            token_ok = False
+            logger.critical(f' {empty_token_message}')
+    return token_ok      
+
+
+
+
+
 
 
 def main():
     """Основная логика работы бота."""
-
-    ...
+    if not check_tokens(): 
+        exit()        
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
 
-    ...
-
     while True:
         try:
-            response = ...
+            send_message(bot, (f'ну уже какая-то фигня начинает получаться {time.time()}'))
+
+            response = get_api_answer(current_timestamp) #подкорректировать
+
+            homework = check_response(response)
 
             ...
 
-            current_timestamp = ...
+            current_timestamp = response.get('current_date')
             time.sleep(RETRY_TIME)
 
         except Exception as error:
