@@ -22,7 +22,7 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 print(PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
-RETRY_TIME = 600
+RETRY_TIME = 60
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -63,7 +63,7 @@ def get_api_answer(current_timestamp):
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
     # удалить после тестирования строку ниже
-    params = {'from_date': 0}
+    params = {'from_date': 1659168456}
     try: 
         homework_statuses = requests.get(
             ENDPOINT,
@@ -95,12 +95,12 @@ def check_response(response):
 
 
 def parse_status(homework):
-    homework_name = ...
-    homework_status = ...
+    homework_name = homework['homework_name'] #pfvtybnm
+    homework_status = homework['status']
 
     ...
 
-    verdict = ...
+    verdict = HOMEWORK_STATUSES[homework_status] #pfvtybnm
 
     ...
 
@@ -120,10 +120,6 @@ def check_tokens():
 
 
 
-
-
-
-
 def main():
     """Основная логика работы бота."""
     if not check_tokens(): 
@@ -132,14 +128,19 @@ def main():
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
 
+    #допилить
+#    response = get_api_answer(current_timestamp) #подкорректировать
+#    homework = check_response(response)    
+    initial_status = ''
+
     while True:
         try:
-            send_message(bot, (f'ну уже какая-то фигня начинает получаться {time.time()}'))
-
             response = get_api_answer(current_timestamp) #подкорректировать
-
             homework = check_response(response)
-
+            message = parse_status(homework)
+            if homework['status'] != initial_status:
+                send_message(bot, message)
+                initial_status = homework['status']
             ...
 
             current_timestamp = response.get('current_date')
