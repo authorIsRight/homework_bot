@@ -1,26 +1,18 @@
 import logging
 import os
-from pprint import pprint
 import sys
 import time
-
-from http import HTTPStatus
-from dotenv import load_dotenv 
+from dotenv import load_dotenv
 
 import requests
 import telegram
-from telegram import ReplyKeyboardMarkup, Bot
-from telegram.ext import CommandHandler, Updater
+
 
 load_dotenv()
-
-#убрать токены перед гит пуш в .env
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-
-print(PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 RETRY_TIME = 60
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -33,58 +25,55 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-# handlers allow to overcome problem with utf-8 
+# handlers allow to overcome problem with utf-8
 logging.basicConfig(handlers=[logging.FileHandler(
     'homewrok_bot.log',
     'a+',
-    'utf-8'
-    )],
+    'utf-8')],
     format='%(asctime)s - %(levelname)s - %(message)s - %(name)s',
     level=logging.INFO
 )
+
 logger = logging.getLogger(__name__)
 logger.addHandler(
     logging.StreamHandler(sys.stdout)
 )
 
+
 def send_message(bot, message):
+    """Sends msg to Tg if status of HW changed."""
     try:
         bot.send_message(
-            chat_id = TELEGRAM_CHAT_ID,
-            text = message)
-        logger.info(f'Сообщение отправленно: {message}')    
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message)
+        logger.info(f'Сообщение отправленно: {message}')
     except telegram.TelegramError as e:
         logger.error(f'Сообщение НЕ отправленно: {message}. {e}')
 
+
 def get_api_answer(current_timestamp):
-    """Запрашивает инфу по домашкам у API яндекса
-    в случае, если доступно, передает это на обработку
-    в другие функции"""
+    """Запрашивает инфу по домашкам у API яндекса.
+    В случае, если доступно, передает это на обработку
+    в другие функции.
+    """
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
-    # удалить после тестирования строку ниже
-#    params = {'from_date': 1659168456}
-    try: 
-        homework_statuses = requests.get(
-            ENDPOINT,
-            headers=HEADERS,
-            params=params
-        )
-        if homework_statuses.status_code != 200:
-            raise requests.ConnectionError(homework_statuses.status_code)
-        print('ебанный статус',homework_statuses.status_code )
-    except requests.exceptions.RequestException as e:
-        logger.error(f'Возникла ошибка, связанная с endpoint: {e}')
-#    if homework_statuses.status_code != 200:
-#        logger.error(f'Проблема с доступом. Код: {homework_statuses.status_code}')
- #       raise requests.ConnectionError(homework_statuses.status_code)      
+    # uncommenting next row allows to get all homeworks
+    # params = {'from_date': 1659168456}
+    homework_statuses = requests.get(
+        ENDPOINT,
+        headers=HEADERS,
+        params=params
+    )
+    if homework_statuses.status_code != 200:
+        raise requests.ConnectionError(homework_statuses.status_code)
     return homework_statuses.json()
 
 
 def check_response(response):
-    """Проверяет на то, что ответ API
-    соответствует ожиданиям и возвращает 
-    последнюю домащнюю работу"""
+    """Проверяет на то, что ответ API соответствует ожиданиям.
+    возвращает последнюю домащнюю работу.
+    """
     if len(response) == 0:
         raise KeyError("Empty dict")
     if 'homeworks' not in response:
@@ -99,58 +88,57 @@ def check_response(response):
 
 
 def parse_status(homework):
+    """Извлекает из информации о конкретной домашке."""
     if len(homework) == 0:
         raise KeyError("Empty dict")
     if 'homework_name' not in homework:
-        error_message = 'Ключ homework_name не найден API'
+        error_message = 'Ключ homework_name не найден в API'
         logger.error(error_message)
         raise KeyError(error_message)
     if 'status' not in homework:
-        error_message = 'Ключ status не найден API'
+        error_message = 'Ключ status не найден в API'
         logger.error(error_message)
         raise KeyError(error_message)
     homework_name = homework['homework_name']
     homework_status = homework['status']
     if homework_status not in HOMEWORK_STATUSES:
-        logger.error('Опять они что-то изменили в статусах домашек. Опять все переделывать')
+        logger.error('Опять они что-то изменили в статусах домашек.'
+                     'Опять все переделывать')
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
-    """Проверяем, что токены подключены"""
+    """Проверяем, что токены подключены."""
     empty_token_message = 'Работа программы требует наличия токенов'
-    token_ok = True  
+    token_ok = True
     tokens = (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
     for token in tokens:
         if token is None:
             token_ok = False
             logger.critical(f' {empty_token_message}')
-    return token_ok      
-
+    return token_ok
 
 
 def main():
     """Основная логика работы бота."""
-    if not check_tokens(): 
-        exit()        
+    if not check_tokens():
+        exit()
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
 
     initial_status = ''
     error_message = ''
+
     while True:
         try:
-            response = get_api_answer(current_timestamp) 
+            response = get_api_answer(current_timestamp)
             homework = check_response(response)
             message = parse_status(homework)
-            print('ебанный', message)
             if homework['status'] != initial_status:
-                print('ебанный homework status', homework['status'])
                 send_message(bot, message)
                 initial_status = homework['status']
-            ...
 
             current_timestamp = response.get('current_date')
             time.sleep(RETRY_TIME)
