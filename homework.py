@@ -63,17 +63,21 @@ def get_api_answer(current_timestamp):
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
     # удалить после тестирования строку ниже
-    params = {'from_date': 1659168456}
+#    params = {'from_date': 1659168456}
     try: 
         homework_statuses = requests.get(
             ENDPOINT,
             headers=HEADERS,
             params=params
         )
-    except homework_statuses.status_code != HTTPStatus.OK:
-        logger.error(f'Проблема с доступом. Код: {homework_statuses.status_code}')               
+        if homework_statuses.status_code != 200:
+            raise requests.ConnectionError(homework_statuses.status_code)
+        print('ебанный статус',homework_statuses.status_code )
     except requests.exceptions.RequestException as e:
-        logger.error(f'Возникла ошибка, связанная с endpoint: {e}')       
+        logger.error(f'Возникла ошибка, связанная с endpoint: {e}')
+#    if homework_statuses.status_code != 200:
+#        logger.error(f'Проблема с доступом. Код: {homework_statuses.status_code}')
+ #       raise requests.ConnectionError(homework_statuses.status_code)      
     return homework_statuses.json()
 
 
@@ -81,6 +85,8 @@ def check_response(response):
     """Проверяет на то, что ответ API
     соответствует ожиданиям и возвращает 
     последнюю домащнюю работу"""
+    if len(response) == 0:
+        raise KeyError("Empty dict")
     if 'homeworks' not in response:
         logger.error('Unexpected return from API: key \'homeworks\' not found')
     if not isinstance(response, dict):
@@ -89,21 +95,25 @@ def check_response(response):
         logger.error('API did not return list on homeworks')
     if not isinstance(response['homeworks'][0], dict):
         logger.error('API did not return dictionary on the last homework')
-    if len(response) == 0:
-        return {}
     return response['homeworks'][0]
 
 
 def parse_status(homework):
-    homework_name = homework['homework_name'] #pfvtybnm
+    if len(homework) == 0:
+        raise KeyError("Empty dict")
+    if 'homework_name' not in homework:
+        error_message = 'Ключ homework_name не найден API'
+        logger.error(error_message)
+        raise KeyError(error_message)
+    if 'status' not in homework:
+        error_message = 'Ключ status не найден API'
+        logger.error(error_message)
+        raise KeyError(error_message)
+    homework_name = homework['homework_name']
     homework_status = homework['status']
-
-    ...
-
-    verdict = HOMEWORK_STATUSES[homework_status] #pfvtybnm
-
-    ...
-
+    if homework_status not in HOMEWORK_STATUSES:
+        logger.error('Опять они что-то изменили в статусах домашек. Опять все переделывать')
+    verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -128,17 +138,16 @@ def main():
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
 
-    #допилить
-#    response = get_api_answer(current_timestamp) #подкорректировать
-#    homework = check_response(response)    
     initial_status = ''
-
+    error_message = ''
     while True:
         try:
-            response = get_api_answer(current_timestamp) #подкорректировать
+            response = get_api_answer(current_timestamp) 
             homework = check_response(response)
             message = parse_status(homework)
+            print('ебанный', message)
             if homework['status'] != initial_status:
+                print('ебанный homework status', homework['status'])
                 send_message(bot, message)
                 initial_status = homework['status']
             ...
@@ -148,10 +157,12 @@ def main():
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            ...
+            logger.error(message)
+            new_error_message = str(error)
+            if new_error_message != error_message:
+                send_message(bot, message)
+                error_message = new_error_message
             time.sleep(RETRY_TIME)
-        else:
-            ...
 
 
 if __name__ == '__main__':
