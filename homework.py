@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from dotenv import load_dotenv
+from http import HTTPStatus
 
 import requests
 import telegram
@@ -19,7 +20,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 60
+RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -66,8 +67,7 @@ def get_api_answer(current_timestamp):
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
     logger.info('Пытаемся получить ответ от API')
-    # uncommenting next row allows to get all homeworks
-    # params = {'from_date': 1659168456}
+
     try:
         homework_statuses = requests.get(
             ENDPOINT,
@@ -78,7 +78,7 @@ def get_api_answer(current_timestamp):
         raise RequestAPIError(
             f'Ошибочный запрос к API. Ошибка -{error}'
         )
-    if homework_statuses.status_code != 200:
+    if homework_statuses.status_code != HTTPStatus.OK:
         raise requests.ConnectionError(homework_statuses.status_code)
     return homework_statuses.json()
 
@@ -86,16 +86,13 @@ def get_api_answer(current_timestamp):
 def check_response(response):
     """Проверяет на то, что ответ API соответствует ожиданиям."""
     if not isinstance(response, dict):
-        logger.error('API did not return dictionary')
         raise TypeError('API did not return dictionary')
 
     if 'homeworks' not in response:
-        logger.error('Unexpected return from API: key \'homeworks\' not found')
         raise KeyError(
             'Unexpected return from API: key \'homeworks\' not found')
 
     if not isinstance(response['homeworks'], list):
-        logger.error('API did not return list on homeworks')
         raise TypeError('API did not return list on homeworks')
 
     return response['homeworks']
@@ -121,10 +118,7 @@ def parse_status(homework):
 
 def check_tokens():
     """Проверяем, что токены подключены."""
-    empty_token_message = 'Работа программы требует наличия токенов'
     tokens = (PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-    if not all(tokens):
-        logger.critical(f' {empty_token_message}')
     return all(tokens)
 
 
@@ -150,9 +144,7 @@ def main():
                 if status != initial_status:
                     send_message(bot, message)
                     initial_status = status
-
             current_timestamp = response.get('current_date')
-            time.sleep(RETRY_TIME)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
@@ -161,7 +153,6 @@ def main():
             if new_error_message != error_message:
                 send_message(bot, message)
                 error_message = new_error_message
-            time.sleep(RETRY_TIME)
 
         finally:
             time.sleep(RETRY_TIME)
